@@ -62,7 +62,7 @@ def entries_a(lines):
         if not s.strip() or HEAD_RE.match(s):
             buf = []
             continue
-        m = re.search(r'\.{2,}\s*\$\s*(\d[\d,]*\.\d{2})\s*(?:\*\*)?(.*)$', s)
+        m = re.search(r'(?:\.{2,}|(?<=\))\.)\s*\$\s*(\d[\d,]*\.\d{2})\s*(?:\*\*)?(.*)$', s)  # dot leader, or one dot after ")"
         if m:
             name = ' '.join([b.strip() for b in buf] + [s[:m.start()].strip()])
             fr = m.group(2).strip()
@@ -73,7 +73,7 @@ def entries_a(lines):
     return out
 
 
-ENTRY_B = re.compile(r'(?P<name>(?:(?!\.{2,}[ \t]*\$).)*?)\.{2,}[ \t]*\$[ \t]*(?P<base>\d[\d,]*\.\d\d)[ \t]*(?:\*\*)?[ \t]*(?P<fr>[^\n]*)', re.S)
+ENTRY_B = re.compile(r'(?P<name>(?:(?!(?:\.{2,}|(?<=\))\.)[ \t]*\$).)*?)(?:\.{2,}|(?<=\))\.)[ \t]*\$[ \t]*(?P<base>\d[\d,]*\.\d\d)[ \t]*(?:\*\*)?[ \t]*(?P<fr>[^\n]*)', re.S)
 
 
 def entries_b(lines):
@@ -92,8 +92,24 @@ def _area(name):
     return norm(m.group(1)) if m else ''
 
 
-def select(entries, label):
-    """Pick the entry a stored map label refers to. Returns (entry, reason) or (None, reason)."""
+def place_key(name):
+    s = (name or '').upper().replace('SAINT ', 'ST ').replace('ST.', 'ST ')
+    s = re.sub(r'\b(COUNTIES|COUNTY|PARISHES|PARISH)\b', '', s)
+    return re.sub(r'[^A-Z]', '', s)
+
+
+def area_has(area, county):
+    """True if a parenthesised area such as "CLARENDON, DILLON, LEE" or "ORLEANS, JEFFERSON AND
+    ST. BERNARD PARISHES" names the county."""
+    parts = re.split(r',|\bAND\b|&', area or '')
+    return place_key(county) in {place_key(p) for p in parts if p.strip()}
+
+
+def select(entries, label, county=None):
+    """Pick the entry a stored map label refers to. Returns (entry, reason) or (None, reason).
+    The stored label can be the first part of a longer class name ("LABORER: COMMON OR GENERAL" for
+    "LABORER: COMMON OR GENERAL; MASON TENDER - ..."), or leave out an area list that the
+    determination adds per group of counties; then the entry whose area names the county is used."""
     trunc = '…' in (label or '')
     L = norm((label or '').split('…')[0]) if trunc else norm(label)
     if L.startswith('LABORER GROUP 1'):
@@ -110,6 +126,12 @@ def select(entries, label):
             hits = cands
     else:
         hits = [e for e in entries if e[0] == L or (trunc and e[0].startswith(L))]
+        if not hits:
+            hits = [e for e in entries if e[0].startswith(L + ';') or e[0].startswith(L + ' (')]
+            if hits and county and all(_area(e[0]) for e in hits):
+                hits = [e for e in hits if area_has(_area(e[0]), county)]
+                if not hits:
+                    return None, 'no area entry names %s' % county
         if not hits:
             hits = [e for e in entries if e[0].endswith(' ' + L) or (trunc and (' ' + L) in e[0])]
     if not hits:
@@ -128,7 +150,7 @@ def fringe_value(fr):
     return float(m.group(1).replace(',', '')) if m else None
 
 
-def read_rate(text, code, label, reader):
+def read_rate(text, code, label, reader, county=None):
     """One reader's answer for one stored row: dict with base, fringe, code, date, or an error."""
     bl = blocks(text)
     get = entries_a if reader == 'A' else entries_b
@@ -142,7 +164,7 @@ def read_rate(text, code, label, reader):
     found = []
     for c in tried:
         date, lines = bl[c]
-        e, why = select(get(lines), label)
+        e, why = select(get(lines), label, county)
         if e:
             found.append((c, date, e))
     if not found:
@@ -156,9 +178,9 @@ def read_rate(text, code, label, reader):
     return {'ok': True, 'code': c, 'date': date, 'base': round(e[1], 2), 'fringe': round(fv, 2)}
 
 
-def read_both(text, code, label):
-    a = read_rate(text, code, label, 'A')
-    b = read_rate(text, code, label, 'B')
+def read_both(text, code, label, county=None):
+    a = read_rate(text, code, label, 'A', county)
+    b = read_rate(text, code, label, 'B', county)
     if a['ok'] and b['ok'] and all(a[k] == b[k] for k in ('code', 'date', 'base', 'fringe')):
         return {'ok': True, **a}
     return {'ok': False, 'why': 'readers disagree' if (a['ok'] and b['ok']) else (a.get('why') or b.get('why')), 'A': a, 'B': b}
