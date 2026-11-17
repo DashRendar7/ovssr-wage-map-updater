@@ -4,8 +4,9 @@ This project keeps the Laborer rates on the map at https://huggingface.co/spaces
 
 Every morning GitHub runs update.py:
 
-1. It asks SAM.gov which Davis-Bacon general wage determinations have a new modification.
-2. It re-reads only those, with two separately written readers (readers.py). A rate changes on the map only when both readers agree.
+1. It asks SAM.gov for the current modification of every Davis-Bacon general wage determination the map uses, and confirms each document it downloads is that exact modification.
+2. It re-reads every rate on the map, with two separately written readers (readers.py). A rate changes on the map only when both readers agree.
+   If SAM.gov's listing looks incomplete (a state shows far fewer determinations than the day before), the run stops without changing anything.
 3. When they don't agree, or a county is no longer listed, the county keeps its last confirmed rate and is marked for a hand check.
 4. Counties that carried a hand-written note are never changed automatically. They are marked instead.
 5. The results go into data/rows.json (the rates) and data/status.json (the log), which the map reads.
