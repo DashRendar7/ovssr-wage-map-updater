@@ -1,9 +1,9 @@
 {
  "baseline": "2026-11-16",
- "last_run_url": "https://github.com/DashRendar7/ovssr-wage-map-updater/actions/runs/43990719687",
+ "last_run_url": "https://github.com/DashRendar7/ovssr-wage-map-updater/actions/runs/43992188767",
  "selftest": {
-  "when": "2026-11-17T00:48:23+00:00",
-  "seconds": 47,
+  "when": "2026-11-17T01:01:39+00:00",
+  "seconds": 57,
   "determinations": 1179,
   "rows_tested": 3168,
   "rows_matching": 3168,
@@ -23,5 +23,17 @@
  "changes": [],
  "flagged": [],
  "flagged_count": 0,
- "county_issues": []
+ "county_issues": [],
+ "active_counts": {
+  "OH": 105,
+  "KY": 106,
+  "TN": 120,
+  "AL": 167,
+  "GA": 188,
+  "FL": 229,
+  "MS": 143,
+  "SC": 66,
+  "LA": 53,
+  "AR": 172
+ }
 }
