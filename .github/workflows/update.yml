@@ -1,0 +1,38 @@
+name: Check SAM.gov for wage changes
+
+on:
+  schedule:
+    - cron: '17 11 * * *'   # every day around 6-7 am Eastern (GitHub may start it a little late)
+  workflow_dispatch:
+    inputs:
+      selftest:
+        description: 'Self-test only: re-read every determination and compare with the verified rates (changes no rates)'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sam-check
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check SAM.gov
+        run: python3 update.py
+        env:
+          SELFTEST: ${{ inputs.selftest }}
+      - name: Save the results
+        if: always()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data
+          if git diff --cached --quiet; then echo "nothing to save"; exit 0; fi
+          git commit -m "SAM.gov check $(date -u +%Y-%m-%d)"
+          git push
