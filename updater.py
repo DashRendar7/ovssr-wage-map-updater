@@ -99,9 +99,15 @@ def check(rows, prev_status, selftest=False, workers=4):
     status = dict(prev_status or {})
     log('start', 'selftest' if selftest else 'check')
     active = {}
+    prev_counts = (prev_status or {}).get('active_counts') or {}
     for st in STATES:
         active[st] = active_wds(st)
         log('active', st, len(active[st]))
+        n, p = len(active[st]), prev_counts.get(st)
+        # A listing much shorter than last time means SAM.gov answered incompletely: change nothing.
+        if n == 0 or (p and n < 0.9 * p):
+            raise RuntimeError('SAM.gov listed %d active determinations for %s (%s on the last check); stopping without changes' % (n, st, p))
+    status['active_counts'] = {st: len(active[st]) for st in STATES}
     by_wd = {}
     for i, r in enumerate(rows):
         by_wd.setdefault(r['wd'], []).append(i)
@@ -125,8 +131,10 @@ def check(rows, prev_status, selftest=False, workers=4):
         base_rev = int(rows[idx[0]]['wd_mod'])
         if selftest:
             todo.append((wd, wd, base_rev, idx))
-        elif ref != wd or info['rev'] != base_rev:
+        else:  # every determination is re-read every day, at its current modification
             todo.append((wd, ref, info['rev'], idx))
+
+    new_mods = sum(1 for wd, ref, rev, idx in todo if ref != wd or rev != int(rows[idx[0]]['wd_mod']))
 
     def work(item):
         wd, ref, rev, idx = item
@@ -140,10 +148,19 @@ def check(rows, prev_status, selftest=False, workers=4):
     with ThreadPoolExecutor(max_workers=workers) as ex:
         for item, text, err in ex.map(work, todo):
             wd, ref, rev, idx = item
+            hdr_ref, pub = readers.header(text) if text else (None, None)
+            mod, mod_date = readers.modification(text) if text else (None, None)
+            if not err and text and (hdr_ref != ref or mod != rev or mod_date != pub):
+                err = 'SAM.gov returned %s modification %s (%s) when %s modification %s was requested' % (hdr_ref, mod, pub, ref, rev)
             if err or not text:
                 errors.append({'wd': ref, 'rev': rev, 'error': err or 'empty document'})
+                new_mod = (ref != wd or rev != int(rows[idx[0]]['wd_mod']))
+                if new_mod and not selftest:
+                    for i in idx:
+                        rows[i]['flag'] = 'DOL published %s modification %s, but it could not be read from SAM.gov on the last check (%s). The rate shown is the last confirmed one and may be out of date.' % (ref, rev, (err or 'empty document')[:120])
+                        rows[i]['flag_kind'] = 'reread'
+                        flagged.append({'state': rows[i]['state'], 'county': rows[i]['county'], 'type': rows[i]['type'], 'wd': ref, 'mod': rev, 'why': 'could not be fetched'})
                 continue
-            hdr_ref, pub = readers.header(text)
             groups = {}
             for i in idx:  # one group per county: some classes have a different rate for each group of counties
                 groups.setdefault((rows[i]['rate_id'], rows[i]['classification'], rows[i]['county']), []).append(i)
@@ -162,7 +179,10 @@ def check(rows, prev_status, selftest=False, workers=4):
                 for i in gi:
                     r = rows[i]
                     old = (r['base'], r['fringe'], r['rate_effective'], r['rate_id'])
-                    if res['ok'] and not r.get('note_fixed'):
+                    same = res['ok'] and (res['base'], res['fringe'], res['date'], res['code']) == (r['base'], r['fringe'] or 0, r['rate_effective'], r['rate_id'])
+                    new_mod = (ref != r['wd'] or rev != int(r['wd_mod']))
+                    # A county with a hand-written note is confirmed when its rate is unchanged, never changed automatically.
+                    if res['ok'] and (not r.get('note_fixed') or same):
                         r.update({'wd': ref, 'wd_mod': rev, 'wd_published': pub or r['wd_published'], 'base': res['base'],
                                   'fringe': res['fringe'], 'total': round(res['base'] + res['fringe'], 2), 'rate_id': res['code'],
                                   'rate_effective': res['date'], 'rate_source': kind(res['code']), 'flag': '', 'flag_kind': ''})
@@ -171,9 +191,12 @@ def check(rows, prev_status, selftest=False, workers=4):
                                             'old': {'base': old[0], 'fringe': old[1], 'rate_effective': old[2], 'rate_id': old[3]},
                                             'new': {'base': r['base'], 'fringe': r['fringe'], 'rate_effective': r['rate_effective'], 'rate_id': r['rate_id']}})
                     else:
-                        why = 'this county carries a hand-written note' if r.get('note_fixed') else res.get('why')
-                        r['flag'] = 'DOL published %s modification %s%s. The automatic re-read could not confirm this rate (%s), so the rate shown is the last confirmed one and may be out of date. Check the determination.' % (
-                            ref, rev, (' on ' + pub) if pub else '', why)
+                        why = 'the rate changed and this county carries a hand-written note' if (res['ok'] and r.get('note_fixed')) else res.get('why')
+                        if new_mod:
+                            r['flag'] = 'DOL published %s modification %s%s. The automatic re-read could not confirm this rate (%s), so the rate shown is the last confirmed one and may be out of date. Check the determination.' % (
+                                ref, rev, (' on ' + pub) if pub else '', why)
+                        else:
+                            r['flag'] = 'The daily re-read of %s modification %s could not confirm this rate (%s). The rate shown is the last confirmed one. Check the determination.' % (ref, rev, why)
                         r['flag_kind'] = 'reread'
                         flagged.append({'state': r['state'], 'county': r['county'], 'type': r['type'], 'wd': ref, 'mod': rev, 'why': why})
     if not selftest:
@@ -202,7 +225,8 @@ def check(rows, prev_status, selftest=False, workers=4):
         return None, status
     all_changes = (status.get('changes') or []) + changes
     status.update({'last_check': now(), 'last_check_seconds': secs, 'last_check_ok': not errors,
-                   'determinations_watched': len(by_wd), 'determinations_reread': len(todo), 'errors': errors[:50],
+                   'determinations_watched': len(by_wd), 'determinations_reread': len(todo) - len(errors),
+                   'determinations_new_mod': new_mods, 'errors': errors[:50],
                    'changes': all_changes[-500:], 'flagged': [f for f in flagged][:1000], 'flagged_count': len(flagged),
                    'county_issues': county_issues[:100]})
     if changes:
