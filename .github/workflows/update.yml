@@ -27,12 +27,30 @@ jobs:
         run: python3 update.py
         env:
           SELFTEST: ${{ inputs.selftest }}
+      - name: Prepare the dashboard files
+        if: always()
+        run: python3 dash_export.py
       - name: Save the results
         if: always()
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add data
+          git add data dash
           if git diff --cached --quiet; then echo "nothing to save"; exit 0; fi
           git commit -m "SAM.gov check $(date -u +%Y-%m-%d)"
           git push
+      - name: Copy the dashboard files to the Hugging Face Space
+        if: always()
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          if [ -z "$HF_TOKEN" ] || [ ! -f dash/status.json ]; then echo "::warning::Dashboard files were not copied to Hugging Face (no HF_TOKEN secret, or no files)"; exit 0; fi
+          pip install --quiet huggingface_hub==0.26.2
+          python3 - <<'PY'
+          import os
+          from huggingface_hub import HfApi
+          HfApi(token=os.environ['HF_TOKEN']).upload_folder(
+              repo_id='DanielK1320/OVSSRDBRates', repo_type='space', folder_path='dash', path_in_repo='dash',
+              delete_patterns=['*.json'], commit_message='Dashboard data from GitHub run ' + os.environ.get('GITHUB_RUN_ID', ''))
+          print('copied dash/ to DanielK1320/OVSSRDBRates')
+          PY
