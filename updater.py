@@ -145,10 +145,10 @@ def check(rows, prev_status, selftest=False, workers=4):
                 continue
             hdr_ref, pub = readers.header(text)
             groups = {}
-            for i in idx:
-                groups.setdefault((rows[i]['rate_id'], rows[i]['classification']), []).append(i)
-            for (code, label), gi in groups.items():
-                res = readers.read_both(text, code, label)
+            for i in idx:  # one group per county: some classes have a different rate for each group of counties
+                groups.setdefault((rows[i]['rate_id'], rows[i]['classification'], rows[i]['county']), []).append(i)
+            for (code, label, county), gi in groups.items():
+                res = readers.read_both(text, code, label, county)
                 r0 = rows[gi[0]]
                 if selftest:
                     exp = (r0['rate_id'], r0['rate_effective'], round(r0['base'], 2), round(r0['fringe'] or 0, 2))
