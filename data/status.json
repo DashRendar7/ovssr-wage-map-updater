@@ -1,6 +1,6 @@
 {
  "baseline": "2026-11-16",
- "last_run_url": "https://github.com/DashRendar7/ovssr-wage-map-updater/actions/runs/44009539898",
+ "last_run_url": "https://github.com/DashRendar7/ovssr-wage-map-updater/actions/runs/44079330076",
  "selftest": {
   "when": "2026-11-17T01:01:39+00:00",
   "seconds": 57,
@@ -14,8 +14,8 @@
   "gone": [],
   "changed_since_baseline": []
  },
- "last_check": "2026-11-17T03:21:39+00:00",
- "last_check_seconds": 48,
+ "last_check": "2026-11-17T12:03:05+00:00",
+ "last_check_seconds": 66,
  "last_check_ok": true,
  "determinations_watched": 1179,
  "determinations_reread": 1179,
