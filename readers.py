@@ -92,6 +92,12 @@ def _area(name):
     return norm(m.group(1)) if m else ''
 
 
+def _lead_area(rest):
+    """The parenthesised text right after a class name: " (BERKELEY, DORCHESTER)..." -> "BERKELEY, DORCHESTER"."""
+    m = re.match(r'\s*\(([^()]*)\)', rest)
+    return m.group(1) if m else ''
+
+
 def place_key(name):
     s = (name or '').upper().replace('SAINT ', 'ST ').replace('ST.', 'ST ')
     s = re.sub(r'\b(COUNTIES|COUNTY|PARISHES|PARISH)\b', '', s)
@@ -127,11 +133,13 @@ def select(entries, label, county=None):
     else:
         hits = [e for e in entries if e[0] == L or (trunc and e[0].startswith(L))]
         if not hits:
-            hits = [e for e in entries if e[0].startswith(L + ';') or e[0].startswith(L + ' (')]
-            if hits and county and all(_area(e[0]) for e in hits):
-                hits = [e for e in hits if area_has(_area(e[0]), county)]
-                if not hits:
+            semi = [e for e in entries if e[0].startswith(L + ';')]
+            paren = [e for e in entries if e[0].startswith(L + ' (')]
+            if paren and county:  # "LABORER: COMMON OR GENERAL (BERKELEY)": keep the entry naming the county
+                paren = [e for e in paren if area_has(_lead_area(e[0][len(L):]), county)]
+                if not paren and not semi:
                     return None, 'no area entry names %s' % county
+            hits = semi + paren
         if not hits:
             hits = [e for e in entries if e[0].endswith(' ' + L) or (trunc and (' ' + L) in e[0])]
     if not hits:
