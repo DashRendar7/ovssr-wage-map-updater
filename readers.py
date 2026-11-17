@@ -32,6 +32,22 @@ def header(text):
     return (m.group(1), mdy(m.group(2))) if m else (None, None)
 
 
+def modification(text):
+    """The latest (number, publication date) in the determination's own modification table."""
+    t = text or ''
+    i = t.find('Modification Number')
+    if i < 0:
+        return None, None
+    mods = []
+    for line in t[i:i + 4000].split('\n')[1:]:
+        m = re.match(r'^\s*(\d{1,3})\s+(\d{2}/\d{2}/\d{4})\s*$', line)
+        if m:
+            mods.append((int(m.group(1)), mdy(m.group(2))))
+        elif mods or line.strip():
+            break
+    return max(mods) if mods else (None, None)
+
+
 def blocks(text):
     """All rate blocks: {code: (date, [lines])}. A block runs from its code line to the next rule
     line or the next code line."""
