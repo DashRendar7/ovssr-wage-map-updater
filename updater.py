@@ -15,7 +15,7 @@ import readers
 
 BASE = 'https://sam.gov'
 UA = 'OVSSR-DB-wage-map/1.0 (daily check for huggingface.co/spaces/DanielK1320/OVSSRDBRates; public Davis-Bacon data)'
-STATES = ['OH', 'KY', 'TN', 'AL', 'GA', 'FL', 'MS', 'SC', 'LA', 'AR']
+STATES = ['OH', 'KY', 'TN', 'AL', 'GA', 'FL', 'MS', 'SC', 'LA']
 
 
 def now():
